@@ -159,8 +159,9 @@ Fast 约快 **1.5×**，但会消耗更多计划额度。开关默认关闭，�
 - `gpt-5.6-sol`
 - `gpt-5.6-terra`
 - `gpt-5.6-luna`
+- GPT-6 及更高主版本的 GPT 模型 ID（例如 `gpt-6`、`gpt-6.1-sol`）。
 
-开启时请求带 `service_tier: "priority"`；关闭时显式带 `service_tier: "default"`。custom origin、proxy 或未列出的模型不会被改写。
+开启时请求带 `service_tier: "priority"`；关闭时显式带 `service_tier: "default"`。custom origin 和 proxy 不会被改写；其他官方 Codex 模型保留标准路由。新版本可请求 Fast 路由，但服务端是否支持该模型的 priority tier 仍由服务端决定。GPT-6 及更高版本不套用旧模型的 Fast 费用倍率，保留 Pi 返回的费用。
 
 <a id="zh-providers"></a>
 ## Provider 支持与语义
@@ -252,6 +253,7 @@ POST /wham/rate-limit-reset-credits/consume
 npm install
 npm run build
 npm run typecheck
+npm test
 npm run check
 ```
 
@@ -361,7 +363,7 @@ Writes preserve unknown JSON fields, use a private temporary file plus rename, a
 
 ## Fast mode
 
-Fast is approximately 1.5× faster and uses more plan allowance. It applies only to official `openai-codex-responses` requests at `https://chatgpt.com` for `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`.
+Fast is approximately 1.5× faster and uses more plan allowance. It applies only to official `openai-codex-responses` requests at `https://chatgpt.com` for `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`, plus GPT model IDs with major version 6 or higher (for example, `gpt-6` and `gpt-6.1-sol`). This enables requesting the priority tier; actual Fast availability is determined by the server. Custom origins and proxies remain excluded, and other official Codex models retain standard routing. GPT-6 and newer retain Pi-reported costs rather than applying legacy Fast cost multipliers.
 
 ## Privacy and limitations
 
@@ -373,6 +375,7 @@ Credential candidates are held only in memory and are never persisted, logged, o
 npm install
 npm run build
 npm run typecheck
+npm test
 npm run check
 ```
 

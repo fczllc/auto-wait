@@ -12,6 +12,14 @@ export const CODEX_FAST_MODEL_IDS: ReadonlySet<string> = new Set([
 	"gpt-5.6-terra",
 ]);
 
+// Preserve the legacy allowlist; newer GPT families can request the tier.
+// Eligibility here does not guarantee that the server supports priority routing.
+function isCodexFastModelId(id: string): boolean {
+	if (CODEX_FAST_MODEL_IDS.has(id)) return true;
+	const match = /^gpt-([1-9]\d*)(?:\.\d+)*(?:-[a-z0-9]+)*$/u.exec(id);
+	return match !== null && Number(match[1]) >= 6;
+}
+
 export type CodexFastAvailability =
 	| { kind: "available"; enabled: boolean }
 	| { kind: "not-codex" }
@@ -25,10 +33,11 @@ export function codexFastAvailability(
 	if (!isOfficialCodexModel(model)) {
 		return {
 			kind: "unavailable",
-			reason: "Fast mode requires the official OpenAI Codex Responses endpoint.",
+			reason:
+				"Fast mode requires the official OpenAI Codex Responses endpoint.",
 		};
 	}
-	if (!CODEX_FAST_MODEL_IDS.has(model.id)) {
+	if (!isCodexFastModelId(model.id)) {
 		return {
 			kind: "unavailable",
 			reason: `${model.id} does not advertise Codex Fast support.`,
@@ -37,16 +46,22 @@ export function codexFastAvailability(
 	return { kind: "available", enabled };
 }
 
-export function codexFastIsEffective(model: PiModel | undefined, enabled: boolean): boolean {
+export function codexFastIsEffective(
+	model: PiModel | undefined,
+	enabled: boolean,
+): boolean {
 	return codexFastAvailability(model, enabled).kind === "available" && enabled;
 }
 
 export function codexFastRequestTier(
 	model: PiModel | undefined,
 	enabled: boolean,
-): typeof CODEX_FAST_SERVICE_TIER | typeof CODEX_STANDARD_SERVICE_TIER | undefined {
+):
+	| typeof CODEX_FAST_SERVICE_TIER
+	| typeof CODEX_STANDARD_SERVICE_TIER
+	| undefined {
 	if (!isOfficialCodexModel(model)) return undefined;
-	return enabled && CODEX_FAST_MODEL_IDS.has(model.id)
+	return enabled && isCodexFastModelId(model.id)
 		? CODEX_FAST_SERVICE_TIER
 		: CODEX_STANDARD_SERVICE_TIER;
 }
@@ -61,6 +76,7 @@ export function rewriteCodexFastPayload(
 	return { ...payload, service_tier: serviceTier };
 }
 
+// Only legacy models have known Fast cost multipliers.
 export function correctCodexFastMessageCost(
 	message: unknown,
 	model: PiModel | undefined,
@@ -68,6 +84,8 @@ export function correctCodexFastMessageCost(
 ): unknown | undefined {
 	if (
 		!codexFastIsEffective(model, fastRequested) ||
+		!model ||
+		!CODEX_FAST_MODEL_IDS.has(model.id) ||
 		!isRecord(message) ||
 		message.role !== "assistant" ||
 		message.provider !== model?.provider ||
@@ -77,12 +95,24 @@ export function correctCodexFastMessageCost(
 	}
 	const usage = isRecord(message.usage) ? message.usage : undefined;
 	const cost = usage && isRecord(usage.cost) ? usage.cost : undefined;
-	if (!usage || !cost || !hasCompleteUsage(usage) || !isOfficialCodexModel(model)) return undefined;
+	if (
+		!usage ||
+		!cost ||
+		!hasCompleteUsage(usage) ||
+		!isOfficialCodexModel(model)
+	)
+		return undefined;
 	const correctedUsage = structuredClone(usage) as typeof usage;
 	calculateCost(model, correctedUsage as never);
 	const multiplier = model.id === "gpt-5.5" ? 2.5 : 2;
 	const correctedCost = correctedUsage.cost as Record<string, number>;
-	for (const key of ["input", "output", "cacheRead", "cacheWrite", "total"] as const) {
+	for (const key of [
+		"input",
+		"output",
+		"cacheRead",
+		"cacheWrite",
+		"total",
+	] as const) {
 		correctedCost[key] *= multiplier;
 	}
 	if (costsEqual(cost, correctedCost)) return undefined;
@@ -91,13 +121,18 @@ export function correctCodexFastMessageCost(
 
 export function codexFastStatusLabel(status: string, enabled: boolean): string {
 	if (!enabled || !/^codex(?:\s|$)/u.test(status)) return status;
-	return status === "codex" ? "codex fast" : `codex fast${status.slice("codex".length)}`;
+	return status === "codex"
+		? "codex fast"
+		: `codex fast${status.slice("codex".length)}`;
 }
 
 function isOfficialCodexModel(
 	model: PiModel | undefined,
 ): model is PiModel & { api: "openai-codex-responses" } {
-	if (model?.provider !== "openai-codex" || !hasApi(model, "openai-codex-responses")) {
+	if (
+		model?.provider !== "openai-codex" ||
+		!hasApi(model, "openai-codex-responses")
+	) {
 		return false;
 	}
 	try {
@@ -117,7 +152,10 @@ function hasCompleteUsage(value: Record<string, unknown>): boolean {
 	);
 }
 
-function costsEqual(left: Record<string, unknown>, right: Record<string, number>): boolean {
+function costsEqual(
+	left: Record<string, unknown>,
+	right: Record<string, number>,
+): boolean {
 	return ["input", "output", "cacheRead", "cacheWrite", "total"].every(
 		(key) => left[key] === right[key],
 	);

@@ -33,6 +33,7 @@
 	},
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",
+		"test": "node --test test/*.test.mjs",
 		"check": "npm run build && biome check --vcs-use-ignore-file=false src test scripts package.json tsconfig.json README.md && npm run typecheck",
 		"format": "biome check --write --vcs-use-ignore-file=false src test scripts package.json tsconfig.json README.md",
 		"typecheck": "tsc --noEmit",
