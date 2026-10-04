@@ -19,13 +19,12 @@
 	],
 	"files": [
 		"src",
-		"dist",
 		"README.md",
 		"LICENSE"
 	],
 	"pi": {
 		"extensions": [
-			"./dist/index.ts"
+			"./src/index.ts"
 		]
 	},
 	"piExtension": {
@@ -34,10 +33,10 @@
 	"scripts": {
 		"build": "node scripts/build-runtime.mjs",
 		"test": "node --test test/*.test.mjs",
+		"test:install": "node scripts/verify-git-install.mjs",
 		"check": "npm run build && biome check --vcs-use-ignore-file=false src test scripts package.json tsconfig.json README.md && npm run typecheck",
 		"format": "biome check --write --vcs-use-ignore-file=false src test scripts package.json tsconfig.json README.md",
-		"typecheck": "tsc --noEmit",
-		"prepack": "npm run build"
+		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "*",
@@ -53,7 +52,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/lue-di/auto-wait"
+		"url": "https://github.com/fczllc/auto-wait"
 	},
 	"dependencies": {
 		"@narumitw/pi-tui-kit": "^0.49.1"

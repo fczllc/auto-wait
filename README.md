@@ -42,35 +42,55 @@
 <a id="zh-install"></a>
 ## 安装与升级
 
-需要 Pi **0.81.0 或更高版本**，以便扩展验证 Pi 已解析认证的有效 base URL。OAuth credential-source v1 的互操作路径按 Pi 0.84.3 验证。
+需要 Pi **0.81.0 或更高版本**；已用 `@earendil-works/pi-coding-agent@1.0.0` 验证类型、构建、回归测试和扩展加载。完整 TUI 交互及真实 provider 请求仍需实际运行确认。Git 安装需要 Git、Node.js 和 npm；Pi 1.0 要求 Node.js >=22.19.0。
+
+### 从本 GitHub 仓库安装（包含本 fork 的修改）
+
+```bash
+pi install git:github.com/fczllc/auto-wait@main
+```
+
+`@main` 明确选择本仓库的 main 分支。安装后在当前 Pi 会话输入 `/reload`，或重新启动 Pi。查看与更新安装：
+
+```bash
+pi list
+pi update --extensions
+```
+
+Git 安装由 Pi 克隆仓库并安装运行依赖；入口是已跟踪的 `src/index.ts`，无需手动构建，也不依赖 `dist/` 或开发依赖。Pi 更新会清理缓存 checkout 中的未跟踪文件并重装运行依赖；源码入口保留，因此更新后仍可加载。不要在 Pi 管理的缓存 checkout 中保存自己的修改。
+
+### 替换已安装的旧来源
+
+先用 `pi list` 确认来源和安装范围，移除对应来源，避免两个扩展同时写入状态栏。例如全局安装：
+
+```bash
+pi remove npm:pi-auto-wait
+# 如果实际安装的是旧包，则改用：pi remove npm:@narumitw/pi-codex-usage
+pi install git:github.com/fczllc/auto-wait@main
+```
+
+如果旧来源在项目 `.pi/settings.json` 中，使用 `pi remove --local <pi list 显示的来源>`；需要项目安装时使用 `pi install --local git:github.com/fczllc/auto-wait@main`。全局和项目可能同时配置来源，应检查并移除不再需要的旧配置。项目包需获得 Pi 的项目信任后才会加载。移除来源后 `/reload` 或重启。
+
+### npm 与临时运行
 
 ```bash
 pi install npm:pi-auto-wait
+pi -e git:github.com/fczllc/auto-wait@main
 ```
 
-临时运行而不永久安装：
+`npm:pi-auto-wait` 安装 npm 已发布版本；它不会自动包含本 GitHub fork 尚未发布的修改。`pi -e` 仅为本次运行加载包，不写入安装配置。
+
+### 本地 checkout
 
 ```bash
-pi -e npm:pi-auto-wait
+git clone https://github.com/fczllc/auto-wait.git
+cd auto-wait
+npm install --omit=dev --legacy-peer-deps
+pi install ./
+# 或只为本次运行加载：pi -e ./
 ```
 
-从本地仓库构建并运行：
-
-```bash
-npm run build
-pi -e ./
-```
-
-`pi-auto-wait` 的 Pi 入口是 `dist/index.ts`，因此直接从未构建的本地目录加载前必须先执行构建。
-
-从旧版 `@narumitw/pi-codex-usage` 迁移：
-
-```bash
-pi remove npm:@narumitw/pi-codex-usage
-pi install npm:pi-auto-wait
-```
-
-请移除旧扩展，避免两个用量扩展同时写入状态栏。
+本地安装引用该目录，不复制文件；请保留目录。开发构建与检查见下方「本地开发」。
 
 <a id="zh-quick-start"></a>
 ## 快速开始
@@ -254,6 +274,7 @@ npm install
 npm run build
 npm run typecheck
 npm test
+npm run test:install
 npm run check
 ```
 
@@ -274,7 +295,9 @@ pi-auto-wait/
 └── README.md
 ```
 
-`src/` 是唯一权威源码；`dist/` 由 `npm run build` 从 `src/index.ts` 图构建，不能手动编辑。
+`npm run test:install` 在临时本地 Git checkout 中验证仅运行依赖安装，以及更新清理后的扩展加载，不修改全局 Pi 配置。
+
+`src/` 是唯一权威源码，也是 Pi 安装后的运行入口。`npm run build` 仍可生成 `dist/` 用于构建验证；安装不依赖该目录，不要手动编辑生成文件。
 
 ---
 
@@ -296,24 +319,50 @@ A [Pi](https://pi.dev) extension for provider-usage management. It reads usage f
 
 ## Install
 
-Pi 0.81.0 or newer is required.
+Pi 0.81.0 or newer is required. Types, build, regression tests, and extension loading have been verified with `@earendil-works/pi-coding-agent@1.0.0`; full TUI interactions and live provider requests remain unverified. Git installation requires Git, Node.js, and npm. Pi 1.0 requires Node.js >=22.19.0.
+
+Install this fork from GitHub:
 
 ```bash
-pi install npm:pi-auto-wait
+pi install git:github.com/fczllc/auto-wait@main
 ```
 
-Try it without installing permanently:
+Run `/reload` in the current Pi session or restart Pi. Inspect and update configured packages:
 
 ```bash
-pi -e npm:pi-auto-wait
+pi list
+pi update --extensions
+```
+
+Pi clones the selected `main` branch and installs runtime dependencies. The manifest loads tracked `src/index.ts` directly, so no manual build, generated `dist/`, or development dependencies are needed. Updates clean untracked files from Pi's cached checkout and reinstall runtime dependencies; the tracked source entrypoint remains available. Keep personal changes outside Pi-managed caches.
+
+Before switching from npm or another source, use `pi list` to identify its exact source and scope, then remove it to avoid duplicate extensions. For a global npm installation:
+
+```bash
+pi remove npm:pi-auto-wait
+# If the old package is installed instead: pi remove npm:@narumitw/pi-codex-usage
+pi install git:github.com/fczllc/auto-wait@main
+```
+
+For project sources, use `pi remove --local <source shown by pi list>`. To install in the project, use `pi install --local git:github.com/fczllc/auto-wait@main`. Check both scopes for obsolete sources. Project packages load only after Pi project trust is granted. Reload or restart after changing sources.
+
+`pi install npm:pi-auto-wait` uses the version published to npm, which does not automatically include unpublished changes in this fork. Try Git without changing package settings:
+
+```bash
+pi -e git:github.com/fczllc/auto-wait@main
 ```
 
 For a local checkout:
 
 ```bash
-npm run build
-pi -e ./
+git clone https://github.com/fczllc/auto-wait.git
+cd auto-wait
+npm install --omit=dev --legacy-peer-deps
+pi install ./
+# Or load for this invocation only: pi -e ./
 ```
+
+Local installation references the directory without copying it; keep that directory in place. See Development for build checks.
 
 ## Commands
 
@@ -376,10 +425,13 @@ npm install
 npm run build
 npm run typecheck
 npm test
+npm run test:install
 npm run check
 ```
 
-The authoritative source is `src/`; `dist/` is generated from `src/index.ts` and must not be edited manually.
+`npm run test:install` verifies production-only installation and loading after an update cleanup in disposable local Git checkouts, without changing global Pi settings.
+
+The authoritative source and installed Pi entrypoint are in `src/`. `npm run build` generates `dist/` for build verification; installation does not require it. Do not edit generated files manually.
 
 ## License
 
