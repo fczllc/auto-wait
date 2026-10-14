@@ -7,6 +7,8 @@ import {
 	codexFastAvailability,
 	codexFastIsEffective,
 	codexFastStatusLabel,
+	codexUltrafastAvailability,
+	codexUltrafastIsEffective,
 	correctCodexFastMessageCost,
 	rewriteCodexFastPayload,
 } from "./codex-fast.js";
@@ -18,7 +20,10 @@ import type { PiModel } from "./types.js";
 const NO_FAST_REQUEST = Symbol("no-fast-request");
 type PendingFastRequest = { fastRequested: boolean; model: PiModel };
 
-export const FAST_USAGE_WARNING = "Fast is about 1.5× faster and uses more of your plan allowance.";
+export const FAST_USAGE_WARNING =
+	"Fast is about 1.5× faster and uses more of your plan allowance.";
+export const ULTRAFAST_USAGE_WARNING =
+	"Ultrafast requires account access and may use plan allowance or credits.";
 
 export function registerCodexFastMode(
 	pi: ExtensionAPI,
@@ -40,10 +45,20 @@ export function registerCodexFastMode(
 			? AbortSignal.any([callerSignal, sessionController.signal])
 			: sessionController.signal;
 		try {
-			await settingsRuntime.update({ codexFastMode: enabled }, signal);
+			await settingsRuntime.update(
+				{
+					codexFastMode: enabled,
+					...(enabled ? { codexUltrafastMode: false } : {}),
+				},
+				signal,
+			);
 		} catch (error) {
-			if (isAbortError(error) || isStaleExtensionContextError(error)) return false;
-			ctx.ui.notify(`Could not save pi-usage.json: ${errorMessage(error)}`, "error");
+			if (isAbortError(error) || isStaleExtensionContextError(error))
+				return false;
+			ctx.ui.notify(
+				`Could not save pi-usage.json: ${errorMessage(error)}`,
+				"error",
+			);
 			return false;
 		}
 		if (
@@ -63,6 +78,49 @@ export function registerCodexFastMode(
 		return true;
 	};
 
+	const toggleUltrafast = async (
+		ctx: ExtensionCommandContext,
+		enabled: boolean,
+		callerSignal?: AbortSignal,
+	): Promise<boolean> => {
+		const ownerGeneration = generation;
+		const sessionId = ctx.sessionManager.getSessionId();
+		const signal = callerSignal
+			? AbortSignal.any([callerSignal, sessionController.signal])
+			: sessionController.signal;
+		try {
+			await settingsRuntime.update(
+				{
+					codexUltrafastMode: enabled,
+					...(enabled ? { codexFastMode: false } : {}),
+				},
+				signal,
+			);
+		} catch (error) {
+			if (isAbortError(error) || isStaleExtensionContextError(error))
+				return false;
+			ctx.ui.notify(
+				`Could not save pi-usage.json: ${errorMessage(error)}`,
+				"error",
+			);
+			return false;
+		}
+		if (
+			signal.aborted ||
+			ownerGeneration !== generation ||
+			ctx.sessionManager.getSessionId() !== sessionId
+		)
+			return false;
+		refreshStatus(ctx);
+		ctx.ui.notify(
+			enabled
+				? `Codex Ultrafast enabled. ${ULTRAFAST_USAGE_WARNING}`
+				: "Codex Ultrafast disabled; standard routing will be used.",
+			"info",
+		);
+		return true;
+	};
+
 	pi.registerCommand("fast", {
 		description: "Toggle Codex Fast mode",
 		handler: async (args, ctx) => {
@@ -77,7 +135,10 @@ export function registerCodexFastMode(
 				settingsRuntime.get().settings.codexFastMode,
 			);
 			if (availability.kind === "not-codex") {
-				ctx.ui.notify("/fast is available only for the active OpenAI Codex model.", "warning");
+				ctx.ui.notify(
+					"/fast is available only for the active OpenAI Codex model.",
+					"warning",
+				);
 				return;
 			}
 			if (availability.kind === "unavailable") {
@@ -94,6 +155,41 @@ export function registerCodexFastMode(
 			await toggle(ctx, !availability.enabled);
 		},
 	});
+	pi.registerCommand("ultrafast", {
+		description: "Toggle Codex Ultrafast mode",
+		handler: async (args, ctx) => {
+			if (args.trim()) {
+				if (!ctx.hasUI)
+					throw new Error("/ultrafast does not accept arguments.");
+				ctx.ui.notify("/ultrafast does not accept arguments.", "warning");
+				return;
+			}
+			if (!ctx.hasUI) throw new Error("/ultrafast requires TUI or RPC mode.");
+			const availability = codexUltrafastAvailability(
+				ctx.model,
+				settingsRuntime.get().settings.codexUltrafastMode,
+			);
+			if (availability.kind === "not-codex") {
+				ctx.ui.notify(
+					"/ultrafast is available only for the active OpenAI Codex model.",
+					"warning",
+				);
+				return;
+			}
+			if (availability.kind === "unavailable") {
+				ctx.ui.notify(availability.reason, "warning");
+				return;
+			}
+			if (settingsRuntime.get().kind === "invalid") {
+				ctx.ui.notify(
+					"pi-usage.json is invalid; repair it and run /reload before changing Ultrafast mode.",
+					"error",
+				);
+				return;
+			}
+			await toggleUltrafast(ctx, !availability.enabled);
+		},
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		generation += 1;
@@ -106,7 +202,8 @@ export function registerCodexFastMode(
 		try {
 			state = await settingsRuntime.reload(sessionController.signal);
 		} catch (error) {
-			if (sessionController.signal.aborted || ownerGeneration !== generation) return;
+			if (sessionController.signal.aborted || ownerGeneration !== generation)
+				return;
 			if (ctx.hasUI) {
 				ctx.ui.notify(
 					`Could not load pi-usage.json; using defaults. ${errorMessage(error)}`,
@@ -132,19 +229,32 @@ export function registerCodexFastMode(
 	});
 
 	pi.on("before_provider_request", (event, ctx) => {
+		const settings = settingsRuntime.get().settings;
 		const rewritten = rewriteCodexFastPayload(
 			event.payload,
 			ctx.model,
-			settingsRuntime.get().settings.codexFastMode,
+			settings.codexFastMode,
+			settings.codexUltrafastMode,
 		);
 		const key = activeRequestKey(ctx);
 		if (key && ctx.model) {
 			pendingFastRequests.set(key, {
-				fastRequested: isRecord(rewritten) && rewritten.service_tier === "priority",
+				fastRequested:
+					isRecord(rewritten) && rewritten.service_tier === "priority",
 				model: ctx.model,
 			});
 		}
 		return rewritten;
+	});
+	pi.on("before_provider_headers", (event, ctx) => {
+		if (
+			codexUltrafastIsEffective(
+				ctx.model,
+				settingsRuntime.get().settings.codexUltrafastMode,
+			)
+		) {
+			event.headers["OpenAI-Service-Tier"] = "ultrafast";
+		}
 	});
 	pi.on("message_end", (event, ctx) => {
 		const request = consumeFastRequest(ctx, event.message, pendingFastRequests);
@@ -165,21 +275,47 @@ export function registerCodexFastMode(
 
 	return {
 		availability(model: PiModel | undefined) {
-			return codexFastAvailability(model, settingsRuntime.get().settings.codexFastMode);
+			return codexFastAvailability(
+				model,
+				settingsRuntime.get().settings.codexFastMode,
+			);
+		},
+		ultrafastAvailability(model: PiModel | undefined) {
+			return codexUltrafastAvailability(
+				model,
+				settingsRuntime.get().settings.codexUltrafastMode,
+			);
 		},
 		decorateStatus(model: PiModel | undefined, status: string) {
+			if (
+				codexUltrafastIsEffective(
+					model,
+					settingsRuntime.get().settings.codexUltrafastMode,
+				)
+			) {
+				return codexFastStatusLabel(status, true).replace(
+					/^codex fast/u,
+					"codex ultrafast",
+				);
+			}
 			return codexFastStatusLabel(
 				status,
-				codexFastIsEffective(model, settingsRuntime.get().settings.codexFastMode),
+				codexFastIsEffective(
+					model,
+					settingsRuntime.get().settings.codexFastMode,
+				),
 			);
 		},
 		toggle,
+		toggleUltrafast,
 	};
 }
 
 function activeRequestKey(ctx: ExtensionContext): string | undefined {
 	const model = ctx.model;
-	return model ? `${ctx.sessionManager.getSessionId()}:${model.provider}/${model.id}` : undefined;
+	return model
+		? `${ctx.sessionManager.getSessionId()}:${model.provider}/${model.id}`
+		: undefined;
 }
 
 function consumeFastRequest(
@@ -187,7 +323,8 @@ function consumeFastRequest(
 	message: unknown,
 	pending: Map<string, PendingFastRequest>,
 ): PendingFastRequest | typeof NO_FAST_REQUEST {
-	if (!isRecord(message) || message.role !== "assistant") return NO_FAST_REQUEST;
+	if (!isRecord(message) || message.role !== "assistant")
+		return NO_FAST_REQUEST;
 	const key = messageRequestKey(ctx, message);
 	if (!key) return NO_FAST_REQUEST;
 	const request = pending.get(key);
@@ -199,7 +336,8 @@ function messageRequestKey(
 	ctx: ExtensionContext,
 	message: Record<string, unknown>,
 ): string | undefined {
-	if (typeof message.provider !== "string" || typeof message.model !== "string") return undefined;
+	if (typeof message.provider !== "string" || typeof message.model !== "string")
+		return undefined;
 	return `${ctx.sessionManager.getSessionId()}:${message.provider}/${message.model}`;
 }
 

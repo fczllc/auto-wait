@@ -8,6 +8,7 @@ import { registerCodexAutoWait } from "./codex-auto-wait.js";
 import {
 	FAST_USAGE_WARNING,
 	registerCodexFastMode,
+	ULTRAFAST_USAGE_WARNING,
 } from "./codex-fast-runtime.js";
 import {
 	type CodexResetAvailability,
@@ -629,6 +630,7 @@ export default function usageExtension(
 			type Action =
 				| "refresh"
 				| "toggle-fast"
+				| "toggle-ultrafast"
 				| "toggle-auto-wait"
 				| "another"
 				| "all"
@@ -649,6 +651,9 @@ export default function usageExtension(
 				screens: {
 					main: () => {
 						const fastAvailability = fastRuntime.availability(ctx.model);
+						const ultrafastAvailability = fastRuntime.ultrafastAvailability(
+							ctx.model,
+						);
 						const fastLines =
 							fastAvailability.kind === "available"
 								? [
@@ -658,12 +663,20 @@ export default function usageExtension(
 								: fastAvailability.kind === "unavailable"
 									? [`Fast mode: Unavailable · ${fastAvailability.reason}`]
 									: [];
+						const ultrafastLines =
+							ultrafastAvailability.kind === "available"
+								? [
+										`Ultrafast mode: ${ultrafastAvailability.enabled ? "On" : "Off"}`,
+										ULTRAFAST_USAGE_WARNING,
+									]
+								: [];
 						return {
 							kind: "actions",
 							title: "Provider usage",
 							lines: [
 								...formatProviderStates(visibleStates).split("\n"),
 								...fastLines,
+								...ultrafastLines,
 								...(ctx.model?.provider === "openai-codex"
 									? [
 											`Automatic 5h wait: ${autoWaitRuntime.enabled() ? "On" : "Off"}`,
@@ -685,6 +698,22 @@ export default function usageExtension(
 														: FAST_USAGE_WARNING,
 												disabled: fastState.kind === "invalid",
 												action: "toggle-fast" as const,
+											},
+										]
+									: []),
+								...(ultrafastAvailability.kind === "available"
+									? [
+											{
+												id: "toggle-ultrafast",
+												label: ultrafastAvailability.enabled
+													? "Turn Ultrafast mode off"
+													: "Turn Ultrafast mode on",
+												description:
+													fastState.kind === "invalid"
+														? "Repair pi-usage.json and reload before changing Ultrafast mode."
+														: ULTRAFAST_USAGE_WARNING,
+												disabled: fastState.kind === "invalid",
+												action: "toggle-ultrafast" as const,
 											},
 										]
 									: []),
@@ -827,6 +856,23 @@ export default function usageExtension(
 							return { kind: "rejected" };
 						}
 						const changed = await fastRuntime.toggle(
+							ctx,
+							!availability.enabled,
+							controller.signal,
+						);
+						if (!changed) return { kind: "rejected" };
+						fastState = settingsRuntime.get();
+						return { kind: "stay" };
+					},
+					"toggle-ultrafast": async () => {
+						const availability = fastRuntime.ultrafastAvailability(ctx.model);
+						if (
+							availability.kind !== "available" ||
+							fastState.kind === "invalid"
+						) {
+							return { kind: "rejected" };
+						}
+						const changed = await fastRuntime.toggleUltrafast(
 							ctx,
 							!availability.enabled,
 							controller.signal,

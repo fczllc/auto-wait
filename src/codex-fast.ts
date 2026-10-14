@@ -2,7 +2,11 @@ import { calculateCost, hasApi } from "@earendil-works/pi-ai";
 import type { PiModel } from "./types.js";
 
 export const CODEX_FAST_SERVICE_TIER = "priority";
+export const CODEX_ULTRAFAST_SERVICE_TIER = "ultrafast";
 export const CODEX_STANDARD_SERVICE_TIER = "default";
+export const CODEX_ULTRAFAST_MODEL_IDS: ReadonlySet<string> = new Set([
+	"gpt-6-astra",
+]);
 
 export const CODEX_FAST_MODEL_IDS: ReadonlySet<string> = new Set([
 	"gpt-5.4",
@@ -53,6 +57,53 @@ export function codexFastIsEffective(
 	return codexFastAvailability(model, enabled).kind === "available" && enabled;
 }
 
+export function codexUltrafastAvailability(
+	model: PiModel | undefined,
+	enabled: boolean,
+): CodexFastAvailability {
+	if (model?.provider !== "openai-codex") return { kind: "not-codex" };
+	if (!isOfficialCodexModel(model)) {
+		return {
+			kind: "unavailable",
+			reason:
+				"Ultrafast requires the official OpenAI Codex Responses endpoint.",
+		};
+	}
+	if (!CODEX_ULTRAFAST_MODEL_IDS.has(model.id)) {
+		return {
+			kind: "unavailable",
+			reason: `${model.id} does not advertise Codex Ultrafast support.`,
+		};
+	}
+	return { kind: "available", enabled };
+}
+
+export function codexUltrafastIsEffective(
+	model: PiModel | undefined,
+	enabled: boolean,
+): boolean {
+	return (
+		codexUltrafastAvailability(model, enabled).kind === "available" && enabled
+	);
+}
+
+export function codexServiceTier(
+	model: PiModel | undefined,
+	fastEnabled: boolean,
+	ultrafastEnabled: boolean,
+):
+	| typeof CODEX_FAST_SERVICE_TIER
+	| typeof CODEX_ULTRAFAST_SERVICE_TIER
+	| typeof CODEX_STANDARD_SERVICE_TIER
+	| undefined {
+	if (!isOfficialCodexModel(model)) return undefined;
+	if (codexUltrafastIsEffective(model, ultrafastEnabled))
+		return CODEX_ULTRAFAST_SERVICE_TIER;
+	return fastEnabled && isCodexFastModelId(model.id)
+		? CODEX_FAST_SERVICE_TIER
+		: CODEX_STANDARD_SERVICE_TIER;
+}
+
 export function codexFastRequestTier(
 	model: PiModel | undefined,
 	enabled: boolean,
@@ -70,8 +121,9 @@ export function rewriteCodexFastPayload(
 	payload: unknown,
 	model: PiModel | undefined,
 	enabled: boolean,
+	ultrafastEnabled = false,
 ): unknown | undefined {
-	const serviceTier = codexFastRequestTier(model, enabled);
+	const serviceTier = codexServiceTier(model, enabled, ultrafastEnabled);
 	if (!serviceTier || !isRecord(payload)) return undefined;
 	return { ...payload, service_tier: serviceTier };
 }
