@@ -9,11 +9,13 @@ export const MAX_USAGE_SETTINGS_BYTES = 64 * 1024;
 
 export interface UsageSettings {
 	codexFastMode: boolean;
+	codexUltrafastMode: boolean;
 	codexAutoWait5h: boolean;
 }
 
 export const DEFAULT_USAGE_SETTINGS: Readonly<UsageSettings> = Object.freeze({
 	codexFastMode: false,
+	codexUltrafastMode: false,
 	codexAutoWait5h: false,
 });
 
@@ -60,6 +62,15 @@ export function normalizeUsageSettings(
 		return undefined;
 	}
 	if (
+		Object.hasOwn(value, "codexUltrafastMode") &&
+		typeof value.codexUltrafastMode !== "boolean"
+	) {
+		return undefined;
+	}
+	if (value.codexFastMode === true && value.codexUltrafastMode === true) {
+		return undefined;
+	}
+	if (
 		Object.hasOwn(value, "codexAutoWait5h") &&
 		typeof value.codexAutoWait5h !== "boolean"
 	) {
@@ -70,6 +81,10 @@ export function normalizeUsageSettings(
 			typeof value.codexFastMode === "boolean"
 				? value.codexFastMode
 				: DEFAULT_USAGE_SETTINGS.codexFastMode,
+		codexUltrafastMode:
+			typeof value.codexUltrafastMode === "boolean"
+				? value.codexUltrafastMode
+				: DEFAULT_USAGE_SETTINGS.codexUltrafastMode,
 		codexAutoWait5h:
 			typeof value.codexAutoWait5h === "boolean"
 				? value.codexAutoWait5h

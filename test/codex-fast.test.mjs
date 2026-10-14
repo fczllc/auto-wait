@@ -100,6 +100,35 @@ test("provider, API and official origin restrictions still apply", () => {
 		);
 });
 
+test("Ultrafast routes only official GPT-6 Astra requests", () => {
+	const astra = model("gpt-6-astra");
+	assert.deepEqual(fast.codexUltrafastAvailability(astra, true), {
+		kind: "available",
+		enabled: true,
+	});
+	assert.equal(fast.codexServiceTier(astra, false, true), "ultrafast");
+	assert.deepEqual(
+		fast.rewriteCodexFastPayload({ input: [] }, astra, false, true),
+		{
+			input: [],
+			service_tier: "ultrafast",
+		},
+	);
+	assert.equal(fast.codexServiceTier(astra, false, false), "default");
+	for (const candidate of [
+		model("gpt-6.1-sol"),
+		model("gpt-6-astra", { provider: "openai" }),
+		model("gpt-6-astra", { api: "openai-responses" }),
+		model("gpt-6-astra", { baseUrl: "https://proxy.example/codex" }),
+	]) {
+		assert.notEqual(
+			fast.codexUltrafastAvailability(candidate, true).kind,
+			"available",
+		);
+		assert.notEqual(fast.codexServiceTier(candidate, false, true), "ultrafast");
+	}
+});
+
 test("new models do not inherit an unverified Fast cost multiplier", () => {
 	const candidate = model("gpt-6-sol", {
 		cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0 },

@@ -35,6 +35,7 @@
 - 支持 OpenRouter 当前 API Key 的消费额度、剩余额度与消费周期。
 - 支持 OpenCode Go（Zen）的滚动、周、月用量窗口。
 - `/fast` 开关受支持 Codex 模型的 Fast 路由。
+- `/ultrafast` 开关 GPT-6 Astra 的 Ultrafast 路由（需账号具备权限）。
 - `/autowait` 开关 Codex 5h 限额自动等待；等待后会复查额度才继续原 prompt。
 - 用量缓存、状态栏和自动等待都按当前 provider 与当前账号隔离。
 - 请求 provider 用量前验证 Pi 实际解析出的认证来源；不会把 custom/proxy provider 的凭据发送到官方用量端点。
@@ -139,6 +140,10 @@ Close
 
 切换当前受支持 Codex 模型的 Fast 模式。该命令不接受参数，且仅能在 TUI / RPC 模式使用。
 
+### `/ultrafast`
+
+切换当前 GPT-6 Astra 模型的 Ultrafast 模式。该命令不接受参数，且仅能在 TUI / RPC 模式使用。启用 Ultrafast 会关闭 Fast；启用 Fast 也会关闭 Ultrafast。
+
 ### `/autowait`
 
 切换当前 OpenAI Codex 模型的 5h 自动等待。该命令不接受参数，且仅能在 TUI / RPC 模式使用。开关会持久化到设置文件。
@@ -182,6 +187,8 @@ Fast 约快 **1.5×**，但会消耗更多计划额度。开关默认关闭，�
 - GPT-6 及更高主版本的 GPT 模型 ID（例如 `gpt-6`、`gpt-6.1-sol`）。
 
 开启时请求带 `service_tier: "priority"`；关闭时显式带 `service_tier: "default"`。custom origin 和 proxy 不会被改写；其他官方 Codex 模型保留标准路由。新版本可请求 Fast 路由，但服务端是否支持该模型的 priority tier 仍由服务端决定。GPT-6 及更高版本不套用旧模型的 Fast 费用倍率，保留 Pi 返回的费用。
+
+Ultrafast 默认关闭，保存为 `codexUltrafastMode`。只对官方 Codex Responses 的 `gpt-6-astra` 生效：请求带 `service_tier: "ultrafast"` 和 `OpenAI-Service-Tier: ultrafast` 请求头。是否实际获得 Ultrafast 由账号、工作区权限和服务端决定；此扩展不会为 Ultrafast 估算额外费用倍率。
 
 <a id="zh-providers"></a>
 ## Provider 支持与语义
@@ -230,6 +237,7 @@ POST /wham/rate-limit-reset-credits/consume
 ```json
 {
   "codexFastMode": false,
+  "codexUltrafastMode": false,
   "codexAutoWait5h": true
 }
 ```
@@ -237,6 +245,7 @@ POST /wham/rate-limit-reset-credits/consume
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
 | `codexFastMode` | `false` | 为受支持的 Codex 模型启用 Fast 路由。 |
+| `codexUltrafastMode` | `false` | 为 GPT-6 Astra 请求 Ultrafast 路由。 |
 | `codexAutoWait5h` | `false` | 在当前 Codex 5h window 耗尽后等待重置并继续已提交的 prompt。 |
 
 设置读取与写入的保证：
@@ -313,6 +322,7 @@ A [Pi](https://pi.dev) extension for provider-usage management. It reads usage f
 
 - `/usage`: inspect the active account, refresh it, redeem eligible Codex resets, or explicitly query another configured provider.
 - `/fast`: toggle Fast routing for supported official Codex models.
+- `/ultrafast`: toggle Ultrafast routing for GPT-6 Astra when your account has access.
 - `/autowait`: toggle automatic waiting for the current Codex 5-hour limit.
 - Supported providers: OpenAI Codex, GitHub Copilot, OpenRouter, and OpenCode Go (Zen).
 - Provider credentials are sent only to validated official usage origins; custom/proxy credentials fail closed.
@@ -370,9 +380,10 @@ Local installation references the directory without copying it; keep that direct
 | --- | --- |
 | `/usage` | Opens the interactive usage menu. It accepts no arguments and requires TUI or RPC mode. |
 | `/fast` | Toggles Fast mode for the active supported Codex model. |
+| `/ultrafast` | Toggles Ultrafast mode for the active GPT-6 Astra model. |
 | `/autowait` | Toggles automatic waiting for an exhausted active Codex 5-hour window. |
 
-The `/usage` menu can refresh the current provider, toggle Fast / automatic wait when relevant, redeem an eligible Codex reset, or explicitly inspect configured providers. Cross-provider queries never replace the active provider's statusline value.
+The `/usage` menu can refresh the current provider, toggle Fast, Ultrafast, or automatic wait when relevant, redeem an eligible Codex reset, or explicitly inspect configured providers. Cross-provider queries never replace the active provider's statusline value.
 
 ## Automatic Codex 5-hour wait
 
@@ -404,6 +415,7 @@ The settings file is normally `~/.pi/agent/pi-usage.json`:
 ```json
 {
   "codexFastMode": false,
+  "codexUltrafastMode": false,
   "codexAutoWait5h": true
 }
 ```
@@ -413,6 +425,8 @@ Writes preserve unknown JSON fields, use a private temporary file plus rename, a
 ## Fast mode
 
 Fast is approximately 1.5× faster and uses more plan allowance. It applies only to official `openai-codex-responses` requests at `https://chatgpt.com` for `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`, plus GPT model IDs with major version 6 or higher (for example, `gpt-6` and `gpt-6.1-sol`). This enables requesting the priority tier; actual Fast availability is determined by the server. Custom origins and proxies remain excluded, and other official Codex models retain standard routing. GPT-6 and newer retain Pi-reported costs rather than applying legacy Fast cost multipliers.
+
+Ultrafast is off by default and stored as `codexUltrafastMode`. On the official Codex Responses endpoint, `/ultrafast` requests `service_tier: "ultrafast"` and the `OpenAI-Service-Tier: ultrafast` header for `gpt-6-astra`. Fast and Ultrafast switches are mutually exclusive. Account and workspace eligibility determine whether the server serves Ultrafast. The extension retains Pi-reported costs without an assumed Ultrafast multiplier.
 
 ## Privacy and limitations
 
